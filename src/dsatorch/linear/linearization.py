@@ -85,21 +85,19 @@ class Linearization:
         return _jacobian, _jacobian_inp
 
     def eigendecomposition(
-        self, x: torch.Tensor, *args, alpha: float = 1
+        self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Linearize the network and compute eigen decomposition.
 
         Args:
             x (torch.Tensor): 1D hidden state where the system is linearized.
-            *args (str): Optional subset of regions to consider.
-            alpha (float): Discretization factor.
 
         Returns:
             torch.Tensor: Real parts of eigenvalues.
             torch.Tensor: Imag parts of eigenvalues.
             torch.Tensor: Eigenvectors stacked column-wise.
         """
-        _jacobian = self.jacobian(x, *args, alpha=alpha)
+        _jacobian, _ = self.jacobian(x)
         eigenvalues, eigenvectors = torch.linalg.eig(_jacobian)
 
         # Split real and imaginary parts
