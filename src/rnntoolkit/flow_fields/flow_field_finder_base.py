@@ -133,7 +133,7 @@ class FlowFieldFinderBase(Generic[RNN]):
 
         # Inverse PCA to input grid into network
         inverse_grid = self.reduce_obj.inverse_transform(low_dim_grid)
-        inverse_grid = inverse_grid.to(self.dtype)
+        inverse_grid = torch.from_numpy(inverse_grid).to(self.dtype)
 
         if expand_dims:
             low_dim_grid = torch.reshape(
