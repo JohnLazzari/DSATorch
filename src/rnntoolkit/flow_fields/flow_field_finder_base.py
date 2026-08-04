@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from sklearn.decomposition import PCA
+from sklearn.exceptions import NotFittedError
+from sklearn.utils.validation import check_is_fitted
 from typing import Generic, TypeVar, Tuple
 
 RNN = TypeVar("RNN", bound=nn.Module)
@@ -10,12 +12,13 @@ class FlowFieldFinderBase(Generic[RNN]):
     def __init__(
         self,
         rnn: RNN,
-        fit_states: torch.Tensor,
         num_points: int,
         x_offset: int,
         y_offset: int,
         x_center: int = 0,
         y_center: int = 0,
+        fit_states: torch.Tensor | None = None,
+        axes: torch.Tensor | None = None,
         **kwargs,
     ):
         """
@@ -34,6 +37,7 @@ class FlowFieldFinderBase(Generic[RNN]):
             y_offset (int): scale to offset grid about trajectory in y direction
             x_center (int): x position to offset from using x_offset
             h_center (int): y position to offset from using y_offset
+            axes (tensor): 2 x N tensor containing two axes to project onto
         """
         self.rnn = rnn
         self.fit_states = fit_states
@@ -44,10 +48,42 @@ class FlowFieldFinderBase(Generic[RNN]):
         self.y_center = y_center
         self.time_dim = 1 if self.rnn.batch_first else 0
         self.dtype = next(self.rnn.parameters()).dtype
-
-        # class objects
+        # reduce obj defaults to PCA, this is different than axes
         self.reduce_obj = PCA(n_components=2)
-        self._fit_traj(self.fit_states)
+        self.axes = None
+        self.inverse_axes = None
+
+        if fit_states is not None:
+            # if not done here, do on the trajectory in find_flow
+            self._fit_traj(self.fit_states)
+
+        if axes is not None:
+            # assert two axes are present
+            assert axes.dim() == 2 and axes.shape[0] == 2
+            self.axes = axes.to(dtype=self.dtype)
+            self.inverse_axes = torch.linalg.pinv(self.axes)
+
+    def transform(self, x):
+        """
+        Helper function that calls either PCA transform or axes transform
+        """
+        if self.axes is not None:
+            return x @ self.axes.T
+        else:
+            try:
+                check_is_fitted(self.reduce_obj)
+            except NotFittedError:
+                self._fit_traj(x)
+            return self.reduce_obj.transform(x)
+
+    def inverse_transform(self, x):
+        """
+        Helper function that calls either PCA transform or axes transform
+        """
+        if self.inverse_axes is not None:
+            return x @ self.inverse_axes.T
+        else:
+            return self.reduce_obj.inverse_transform(x)
 
     def find_nonlinear_flow(self, *args, **kwargs) -> list:
         """Compute 2D flow fields in a region subspace along a trajectory."""
@@ -93,8 +129,8 @@ class FlowFieldFinderBase(Generic[RNN]):
         """
         # Gather activity for specified region and cell type
         temp_act = torch.reshape(trajectory, (-1, trajectory.shape[-1]))
-        reduced_traj = self.reduce_obj.transform(temp_act)
-        reduced_traj = torch.from_numpy(reduced_traj)
+        reduced_traj = self.transform(temp_act)
+        reduced_traj = torch.as_tensor(reduced_traj, dtype=self.dtype)
 
         return reduced_traj
 
@@ -132,8 +168,8 @@ class FlowFieldFinderBase(Generic[RNN]):
         low_dim_grid = torch.flatten(low_dim_grid, start_dim=0, end_dim=1)
 
         # Inverse PCA to input grid into network
-        inverse_grid = self.reduce_obj.inverse_transform(low_dim_grid)
-        inverse_grid = torch.from_numpy(inverse_grid).to(self.dtype)
+        inverse_grid = self.inverse_transform(low_dim_grid)
+        inverse_grid = torch.as_tensor(inverse_grid, dtype=self.dtype)
 
         if expand_dims:
             low_dim_grid = torch.reshape(

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from sklearn.decomposition import PCA
 from rnntoolkit.linear import Linearization
 from rnntoolkit.flow_fields.flow_field import FlowField
 from rnntoolkit.flow_fields.flow_field_finder_base import FlowFieldFinderBase
@@ -10,16 +9,24 @@ class FlowFieldFinder(FlowFieldFinderBase):
     def __init__(
         self,
         rnn: nn.RNN,
-        fit_states: torch.Tensor,
-        num_points: int,
-        x_offset: int,
-        y_offset: int,
+        num_points: int = 10,
+        x_offset: int = 1,
+        y_offset: int = 1,
         x_center: int = 0,
         y_center: int = 0,
+        fit_states: torch.Tensor | None = None,
+        axes: torch.Tensor | None = None,
         follow_traj: bool = False,
     ):
         super().__init__(
-            rnn, fit_states, num_points, x_offset, y_offset, x_center, y_center
+            rnn=rnn,
+            num_points=num_points,
+            x_offset=x_offset,
+            y_offset=y_offset,
+            x_center=x_center,
+            y_center=y_center,
+            fit_states=fit_states,
+            axes=axes,
         )
         """
         Flow Field Finder that gathers a flow field about a specified trajectory
