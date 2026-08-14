@@ -15,8 +15,8 @@ class FlowFieldFinderBase(Generic[RNN]):
         num_points: int,
         x_offset: int,
         y_offset: int,
-        x_center: int = 0,
-        y_center: int = 0,
+        x_center: float = 0.0,
+        y_center: float = 0.0,
         fit_states: torch.Tensor | None = None,
         axes: torch.Tensor | None = None,
         **kwargs,
@@ -93,7 +93,8 @@ class FlowFieldFinderBase(Generic[RNN]):
         """Compute linearized flow fields in a 2D subspace."""
         raise NotImplementedError
 
-    def _nxd(self, x: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _nxd(x: torch.Tensor) -> torch.Tensor:
         """
         Broadcast to nxd, even for a 1d tensor
 
