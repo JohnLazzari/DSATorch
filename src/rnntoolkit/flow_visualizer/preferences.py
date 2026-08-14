@@ -43,9 +43,43 @@ PREFERENCE = {
         "fmt": lambda v: f"{v:.1f}x",
         "is_int": False,
     },
-    "colormap": {
-        "choices": ("viridis", "plasma", "inferno", "Purples", "coolwarm"),
+    "arrow_length_mode": {
+        "choices": ("speed", "equal"),
         "fmt": str,
+    },
+    "colormap": {
+        "choices": ("viridis", "cividis", "plasma", "magma", "inferno", "YlGnBu", "PuBuGn", "cubehelix", "Purples", "coolwarm"),
+        "fmt": str,
+    },
+    "vector_colors": {
+        "choices": ("black", "viridis", "cividis", "plasma", "magma", "inferno", "YlGnBu", "PuBuGn", "cubehelix", "Purples", "coolwarm"),
+        "fmt": str,
+    },
+    "show_heatmap": {"choices": ("off", "on"), "fmt": str},
+    "show_contours": {"choices": ("off", "on"), "fmt": str},
+    "show_vectors": {"choices": ("on", "off"), "fmt": str},
+    "state_trajectory": {"choices": ("off", "on"), "fmt": str},
+    "trajectory_color": {
+        "choices": ("black", "red", "blue", "green", "white"),
+        "fmt": str,
+    },
+    "trajectory_thickness": {
+        "min": 1,
+        "max": 8,
+        "step": 1,
+        "fmt": lambda v: str(int(v)),
+        "is_int": True,
+    },
+    "state_marker": {
+        "choices": ("star", "dot", "x"),
+        "fmt": str,
+    },
+    "state_marker_size": {
+        "min": 0.5,
+        "max": 3.5,
+        "step": 0.1,
+        "fmt": lambda v: f"{v:.1f}x",
+        "is_int": False,
     },
 }
 
@@ -54,7 +88,17 @@ PREF_LABELS = [
     ("scroll_speed", "Scroll Speed"),
     ("zoom_speed", "Zoom Speed"),
     ("arrow_size_mult", "Arrow Size"),
-    ("colormap", "Arrow Colors"),
+    ("arrow_length_mode", "Arrow Length"),
+    ("colormap", "Energy Colors"),
+    ("vector_colors", "Vector Colors"),
+    ("show_heatmap", "Energy Heatmap"),
+    ("show_contours", "Energy Contours"),
+    ("show_vectors", "Show Vectors"),
+    ("state_trajectory", "State Trajectory"),
+    ("trajectory_color", "Trajectory Color"),
+    ("trajectory_thickness", "Trajectory Thickness"),
+    ("state_marker", "State Marker"),
+    ("state_marker_size", "Marker Size"),
 ]
 
 FIELD_HIDDEN_SIZE = 8
@@ -69,15 +113,15 @@ class PreferencesPanel:
     method owns value changes and range checking; this class handles the UI.
     """
 
-    def __init__(self, file_button, app):
-        # ``file`` is the anchor, while ``app`` owns the preference values.
-        self.file = file_button
+    def __init__(self, options_button, app):
+        # The options button is the anchor, while ``app`` owns the values.
+        self.file = options_button
         self.app = app
         self.visible = False
         self.label_font = pygame.font.SysFont("Arial", 14)
         self.value_font = pygame.font.SysFont("Arial", 13)
         self.btn_font = pygame.font.SysFont("Arial", 15)
-        self.width = 300
+        self.width = 340
         self.row_height = 36
         self.padding = 5
 
@@ -114,6 +158,15 @@ class PreferencesPanel:
         plus_rect = pygame.Rect(row.right - 34, row.top + 4, 26, 26)
         return minus_rect, plus_rect
 
+    def _is_toggle(self, key):
+        """Return whether a choice is a simple two-state on/off setting."""
+        return key in {"show_heatmap", "show_contours", "show_vectors", "state_trajectory"}
+
+    def _value_rect(self, i):
+        row = self._row_rect(i)
+        minus_rect, plus_rect = self._stepper_rects(i)
+        return pygame.Rect(minus_rect.left, row.top + 4, plus_rect.right - minus_rect.left, 26)
+
     def handle_event(self, event):
         """Apply stepper clicks and close the panel on an outside click."""
         if not self.visible:
@@ -121,10 +174,14 @@ class PreferencesPanel:
         if event.type == pygame.MOUSEBUTTONDOWN:
             for i, (key, label) in enumerate(PREF_LABELS):
                 minus_rect, plus_rect = self._stepper_rects(i)
-                if minus_rect.collidepoint(event.pos):
+                if self._is_toggle(key):
+                    if self._value_rect(i).collidepoint(event.pos):
+                        self.app.adjust_pref(key, 1)
+                        return
+                elif minus_rect.collidepoint(event.pos):
                     self.app.adjust_pref(key, -1)
                     return
-                if plus_rect.collidepoint(event.pos):
+                elif plus_rect.collidepoint(event.pos):
                     self.app.adjust_pref(key, 1)
                     return
             if not self._menu_rect().collidepoint(event.pos):
@@ -157,19 +214,24 @@ class PreferencesPanel:
             )
 
             minus_rect, plus_rect = self._stepper_rects(i)
-            pygame.draw.rect(screen, (238, 238, 242), minus_rect, border_radius=6)
-            pygame.draw.rect(screen, (238, 238, 242), plus_rect, border_radius=6)
-
-            left_label, right_label = ("<", ">") if key == "colormap" else ("-", "+")
-            minus_text = self.btn_font.render(left_label, True, BLACK)
-            plus_text = self.btn_font.render(right_label, True, BLACK)
-            screen.blit(minus_text, minus_text.get_rect(center=minus_rect.center))
-            screen.blit(plus_text, plus_text.get_rect(center=plus_rect.center))
-
             spec = PREFERENCE[key]
             value_str = spec["fmt"](self.app.preferences[key])
-            value_surface = self.value_font.render(value_str, True, DARK_GRAY)
-            value_rect = pygame.Rect(
-                minus_rect.right, row.top, plus_rect.left - minus_rect.right, row.height
-            )
-            screen.blit(value_surface, value_surface.get_rect(center=value_rect.center))
+
+            # Controls use the same background as the panel and have no border.
+            if self._is_toggle(key):
+                value_rect = self._value_rect(i)
+                value_surface = self.value_font.render(value_str, True, DARK_GRAY)
+                screen.blit(value_surface, value_surface.get_rect(center=value_rect.center))
+            else:
+                pygame.draw.rect(screen, WHITE, minus_rect, border_radius=6)
+                pygame.draw.rect(screen, WHITE, plus_rect, border_radius=6)
+                step_labels = ("<", ">") if "choices" in spec else ("-", "+")
+                left_text = self.btn_font.render(step_labels[0], True, BLACK)
+                right_text = self.btn_font.render(step_labels[1], True, BLACK)
+                screen.blit(left_text, left_text.get_rect(center=minus_rect.center))
+                screen.blit(right_text, right_text.get_rect(center=plus_rect.center))
+                value_rect = pygame.Rect(
+                    minus_rect.right, row.top, plus_rect.left - minus_rect.right, row.height
+                )
+                value_surface = self.value_font.render(value_str, True, DARK_GRAY)
+                screen.blit(value_surface, value_surface.get_rect(center=value_rect.center))

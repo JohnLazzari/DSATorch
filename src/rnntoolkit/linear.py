@@ -43,13 +43,14 @@ class Linearization:
         Args:
             input (Tensor): 1D tensor of input for network at a given state
             h (Tensor): 1D tensor of network state to linearize about
-            delta_inp (Tensor): 1D tensor for perturbation of input to apply to input jacobian
+            delta_input (Tensor): 1D tensor for perturbation of input to apply to input jacobian
             delta_h (Tensor): batched perturbations of state
         """
 
         # Assert correct shapes
         assert input.dim() == 1
         assert h.dim() == 1
+        assert delta_input.dim() == 1
 
         # assert correct batch dimensions
         if delta_h.dim() > 1:
@@ -67,7 +68,7 @@ class Linearization:
             _, h_next = self.rnn(input, h)
 
         # If there is only a single input there becomes a shape issue with squeezing
-        if delta_input.shape == (1,) and _jacobian_inp.dim() == 1:
+        if delta_input.shape == (1,) or _jacobian_inp.dim() == 1:
             _jacobian_inp = _jacobian_inp.unsqueeze(1)
 
         h_pert = (

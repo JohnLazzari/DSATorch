@@ -1,12 +1,13 @@
 import pygame
+import pygame.gfxdraw as gfxdraw
 import numpy as np
 import math
 import sys
 import torch
 from matplotlib import colormaps
 from rnntoolkit.flow_fields.flow_field_finder import FlowFieldFinder
+from rnntoolkit.flow_fields.flow_field_finder_base import FlowFieldFinderBase
 from rnntoolkit.flow_visualizer.button import Button
-from rnntoolkit.flow_visualizer.drop_down import DropdownMenu
 from rnntoolkit.flow_visualizer.preferences import PreferencesPanel
 from rnntoolkit.flow_fields.flow_field import FlowField
 
@@ -25,6 +26,18 @@ DARK_GRAY = (80, 80, 80)
 CANVAS_BG = (245, 245, 250)
 
 
+def draw_aa_line(surface, start, end, color):
+    """Draw an anti-aliased line from two point tuples with gfxdraw."""
+    gfxdraw.line(
+        surface,
+        round(start[0]),
+        round(start[1]),
+        round(end[0]),
+        round(end[1]),
+        color,
+    )
+
+
 def fmt_num(v):
     if abs(v) < 1e-9:
         return "0"
@@ -39,7 +52,7 @@ def fmt_num(v):
 PREFERENCE = {
     "grid_points": {
         "min": 5,
-        "max": 21,
+        "max": 35,
         "step": 1,
         "fmt": lambda v: str(int(v)),
         "is_int": True,
@@ -65,9 +78,66 @@ PREFERENCE = {
         "fmt": lambda v: f"{v:.1f}x",
         "is_int": False,
     },
-    "colormap": {
-        "choices": ("viridis", "plasma", "inferno", "Purples", "coolwarm"),
+    "arrow_length_mode": {
+        "choices": ("speed", "equal"),
         "fmt": str,
+    },
+    "colormap": {
+        "choices": (
+            "viridis",
+            "cividis",
+            "plasma",
+            "magma",
+            "inferno",
+            "YlGnBu",
+            "PuBuGn",
+            "cubehelix",
+            "Purples",
+            "coolwarm",
+        ),
+        "fmt": str,
+    },
+    "vector_colors": {
+        "choices": (
+            "black",
+            "viridis",
+            "cividis",
+            "plasma",
+            "magma",
+            "inferno",
+            "YlGnBu",
+            "PuBuGn",
+            "cubehelix",
+            "Purples",
+            "coolwarm",
+        ),
+        "fmt": str,
+    },
+    "show_heatmap": {"choices": ("off", "on"), "fmt": str},
+    "show_contours": {"choices": ("off", "on"), "fmt": str},
+    "show_vectors": {"choices": ("on", "off"), "fmt": str},
+    "state_trajectory": {"choices": ("off", "on"), "fmt": str},
+    "trajectory_color": {
+        "choices": ("black", "red", "blue", "green", "white"),
+        "fmt": str,
+    },
+    "trajectory_thickness": {
+        "min": 1,
+        "max": 8,
+        "step": 1,
+        "fmt": lambda v: str(int(v)),
+        "is_int": True,
+    },
+    "state_marker": {
+        "choices": ("star", "dot", "x"),
+        "fmt": str,
+    },
+    "state_marker_size": {
+        "min": 0.5,
+        "max": 3.5,
+        "step": 0.1,
+        "fmt": lambda v: f"{v:.1f}x",
+        "is_int": False,
     },
 }
 
@@ -84,20 +154,21 @@ class FlowFieldVisualizer:
     def __init__(
         self,
         rnn,
-        inputs: torch.Tensor,
         num_points: int = 10,
         delta_inputs: torch.Tensor | None = None,
         x_offset: int = 5,
         y_offset: int = 5,
-        x_center: int = 0,
-        y_center: int = 0,
+        x_center: float = 0.0,
+        y_center: float = 0.0,
         fit_states: torch.Tensor | None = None,
         axes: torch.Tensor | None = None,
         flow_type: str = "nonlinear",
     ):
         """Create the window, prepare the supplied data, and build the UI."""
         # Pygame window and frame-rate controller.
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.screen = pygame.display.set_mode(
+            (WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE
+        )
         pygame.display.set_caption("Flow Field Visualizer")
         self.clock = pygame.time.Clock()
 
@@ -107,7 +178,17 @@ class FlowFieldVisualizer:
             "scroll_speed": 1.0,
             "zoom_speed": 1.0,
             "arrow_size_mult": 1.8,
+            "arrow_length_mode": "speed",
             "colormap": "viridis",
+            "vector_colors": "black",
+            "show_heatmap": "off",
+            "show_contours": "off",
+            "show_vectors": "on",
+            "state_trajectory": "off",
+            "trajectory_color": "black",
+            "trajectory_thickness": 2,
+            "state_marker": "star",
+            "state_marker_size": 1.0,
         }
         self.small_grid = 10
 
@@ -128,7 +209,6 @@ class FlowFieldVisualizer:
         # Model data consumed by FlowFieldFinder.
         self.rnn = rnn
         self.fit_states = fit_states
-        self.inputs = inputs
         self.delta_inputs = delta_inputs
         self.axes = axes
         self.current_element_idx = 0
@@ -149,6 +229,8 @@ class FlowFieldVisualizer:
 
         self._create_ui()
         self.running = True
+        self._active_inputs = None
+        self._active_states = None
 
         # State retained while the user pans with a left-mouse drag.
         self.dragging = False
@@ -167,16 +249,14 @@ class FlowFieldVisualizer:
             axes=self.axes,
             follow_traj=False,
         )
-        self.states_nxd = finder._nxd(self.fit_states)
-        self.inputs_nxd = finder._nxd(self.inputs)
+        if self.fit_states is not None:
+            self.fit_states_nxd = finder._nxd(self.fit_states)
         if self.delta_inputs is not None:
             self.delta_inputs_nxd = finder._nxd(self.delta_inputs)
         else:
             self.delta_inputs_nxd = None
 
-        self.input_size = self.inputs.shape[-1]
-
-        return {"finder": finder, "input_size": self.input_size}
+        return finder
 
     def current_field(self):
         """Return metadata for the currently visible field page."""
@@ -187,33 +267,30 @@ class FlowFieldVisualizer:
         self._flow_dirty = True
 
     def _calculate_grid_area(self):
-        """Fit a centered square canvas between the two toolbars."""
-        top_margin = 30
-        bottom_margin = 45
+        """Center the square plot in the space between the two toolbars."""
+        window_width, window_height = self.screen.get_size()
         side_margin = 80
+        vertical_margin = 10
 
-        available_width = WINDOW_WIDTH - side_margin * 2
-        available_height = (
-            WINDOW_HEIGHT - TOP_BAR_HEIGHT - TOOLBAR_HEIGHT - top_margin - bottom_margin
-        )
+        left_bound = side_margin
+        right_bound = window_width - side_margin
+        top_bound = TOP_BAR_HEIGHT + vertical_margin
+        bottom_bound = window_height - TOOLBAR_HEIGHT - vertical_margin
 
+        available_width = max(1, right_bound - left_bound)
+        available_height = max(1, bottom_bound - top_bound)
         size = min(available_width, available_height)
-
-        left = (WINDOW_WIDTH - size) // 2
-        top = TOP_BAR_HEIGHT + top_margin
-
+        left = (window_width - size) // 2
+        top = top_bound + (available_height - size) // 2
         self.grid_area = pygame.Rect(left, top, size, size)
 
     def _create_ui(self):
         """Create all buttons and popup controls."""
-        self.file_btn = Button(14, 5, 70, 25, "File", style="menu")
-        self.pref_btn = Button(88, 5, 105, 25, "Preferences", style="menu")
-        self.file_dropdown = DropdownMenu(self.file_btn, ["Save Current", "Save All"])
+        self.pref_btn = Button(14, 5, 105, 25, "Options", style="menu")
         self.preferences_panel = PreferencesPanel(self.pref_btn, self)
 
         toolbar_y = WINDOW_HEIGHT - TOOLBAR_HEIGHT
-        self.reset_btn = Button(14, toolbar_y + 7, 100, 25, "Reset View", style="menu")
-        self.mode_btn = Button(118, toolbar_y + 7, 100, 25, "Nonlinear", style="menu")
+        self.mode_btn = Button(14, toolbar_y + 7, 100, 25, "Nonlinear", style="menu")
 
         right_x = WINDOW_WIDTH - 180
         self.left_arrow_btn = Button(right_x, toolbar_y + 7, 40, 25, "<", style="menu")
@@ -222,14 +299,24 @@ class FlowFieldVisualizer:
             right_x + 110, toolbar_y + 7, 40, 25, ">", style="menu"
         )
 
+        self._position_toolbar_controls()
+
         self.all_buttons = [
-            self.file_btn,
-            self.pref_btn,
-            self.reset_btn,
+                self.pref_btn,
             self.mode_btn,
             self.left_arrow_btn,
             self.right_arrow_btn,
         ]
+
+    def _position_toolbar_controls(self):
+        """Keep toolbar controls fixed-size while moving them with the window."""
+        _, window_height = self.screen.get_size()
+        toolbar_y = window_height - TOOLBAR_HEIGHT
+        self.mode_btn.rect.topleft = (14, toolbar_y + 7)
+        right_x = max(230, self.screen.get_width() - 180)
+        self.left_arrow_btn.rect.topleft = (right_x, toolbar_y + 7)
+        self.page_label_rect.topleft = (right_x + 50, toolbar_y + 7)
+        self.right_arrow_btn.rect.topleft = (right_x + 110, toolbar_y + 7)
 
     def adjust_pref(self, key, direction):
         """Move a preference one step and clamp it to its allowed range."""
@@ -334,8 +421,11 @@ class FlowFieldVisualizer:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.VIDEORESIZE:
+                self.screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
+                self._calculate_grid_area()
+                self._position_toolbar_controls()
 
-            file_button_toggled = False
             pref_button_toggled = False
             any_button_consumed = False
 
@@ -343,26 +433,12 @@ class FlowFieldVisualizer:
             for button in self.all_buttons:
                 if button.handle_event(event):
                     any_button_consumed = True
-                    if button == self.file_btn:
-                        if self.file_dropdown.visible:
-                            self.file_dropdown.hide()
-                        else:
-                            self.file_dropdown.show()
-                            self.preferences_panel.hide()
-                        file_button_toggled = True
-                    elif button == self.pref_btn:
+                    if button == self.pref_btn:
                         if self.preferences_panel.visible:
                             self.preferences_panel.hide()
                         else:
                             self.preferences_panel.show()
-                            self.file_dropdown.hide()
                         pref_button_toggled = True
-                    elif button == self.reset_btn:
-                        self.preferences["grid_points"] = 11
-                        self.x_center = 5.0
-                        self.y_center = 5.0
-                        self.view_span = 10.0
-                        self._mark_dirty()
                     elif button == self.mode_btn:
                         self.flow_type = (
                             "linear" if self.flow_type == "nonlinear" else "nonlinear"
@@ -376,21 +452,18 @@ class FlowFieldVisualizer:
                         self._mark_dirty()
                     elif button == self.right_arrow_btn:
                         self.current_element_idx = min(
-                            len(self.states_nxd) - 1,
+                            self.n_pages - 1,
                             self.current_element_idx + 1,
                         )
                         self._mark_dirty()
 
-            if not file_button_toggled:
-                self.file_dropdown.handle_event(event)
             if not pref_button_toggled:
                 self.preferences_panel.handle_event(event)
 
             # Zoom only when a popup is not covering the canvas.
             if event.type == pygame.MOUSEWHEEL:
                 if (
-                    not self.file_dropdown.visible
-                    and not self.preferences_panel.visible
+                    not self.preferences_panel.visible
                 ):
                     mouse_pos = pygame.mouse.get_pos()
                     if self.grid_area.collidepoint(mouse_pos):
@@ -399,7 +472,6 @@ class FlowFieldVisualizer:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if (
                     not any_button_consumed
-                    and not self.file_dropdown.visible
                     and not self.preferences_panel.visible
                     and self.grid_area.collidepoint(event.pos)
                 ):
@@ -433,12 +505,12 @@ class FlowFieldVisualizer:
 
         self._update_bounds()
 
-    def _compute_flow_field(self):
+    def _compute_flow_field(self, inp_nxd, states_nxd):
         """Compute and cache vectors for the current view and data source."""
         # User-data mode evaluates around a selected trajectory sample; the
         # other branch evaluates the currently selected generated field.
-        state_n = self.states_nxd[self.current_element_idx]
-        inp_n = self.inputs_nxd[self.current_element_idx]
+        state_n = states_nxd[self.current_element_idx]
+        inp_n = inp_nxd[self.current_element_idx]
         delta_inp_n = None
         if self.delta_inputs_nxd is not None:
             delta_inp_n = self.delta_inputs_nxd[self.current_element_idx]
@@ -455,7 +527,7 @@ class FlowFieldVisualizer:
 
     def _compute_user_flow(self, state_n, inp_n, delta_inp_n=None):
         """Calculate nonlinear or linear flow around one user sample."""
-        finder = self.current_field()["finder"]
+        finder = self.current_field()
 
         num_points = self.preferences["grid_points"]
         x_offset = self.view_span / 2.0
@@ -490,11 +562,11 @@ class FlowFieldVisualizer:
                 )
         else:
             if delta_inp_n is None:
-                raise ValueError("delta_inp required for linear flow")
-            if len(delta_inp_n.shape) == 1:
-                delta_inp_n = delta_inp_n.unsqueeze(0)
+                delta_inp_n = torch.zeros_like(inp_n).squeeze(0)
             delta_h = inverse_grid - state_n
             with torch.no_grad():
+                inp_n = inp_n.squeeze(0)
+                state_n = state_n.squeeze(0)
                 h = finder.linearization(inp_n, state_n, delta_inp_n, delta_h)
 
         # Project predictions back to 2-D and derive vectors and speeds.
@@ -507,7 +579,7 @@ class FlowFieldVisualizer:
 
         return FlowField(x_vel, y_vel, low_dim_grid, speed)
 
-    def draw_grid(self):
+    def draw_grid(self, inp_nxd, states_nxd):
         """Draw grid lines, flow arrows, and arrowheads."""
         pygame.draw.rect(self.screen, WHITE, self.grid_area)
 
@@ -568,7 +640,23 @@ class FlowFieldVisualizer:
 
         # Reuse the field until navigation or settings invalidate it.
         if self._flow_dirty or self._flow_cache is None:
-            self._compute_flow_field()
+            self._compute_flow_field(inp_nxd, states_nxd)
+
+        if (
+            self.preferences["show_heatmap"] == "on"
+            or self.preferences["show_contours"] == "on"
+        ):
+            self._draw_energy_landscape(
+                self._flow_cache,
+                draw_heatmap=self.preferences["show_heatmap"] == "on",
+                draw_contours=self.preferences["show_contours"] == "on",
+            )
+
+        if self.preferences["show_vectors"] != "on":
+            self._draw_state_trajectory(states_nxd)
+            self._draw_state_marker(states_nxd)
+            self.screen.set_clip(prev_clip)
+            return
 
         unit_px = (
             abs(
@@ -579,7 +667,8 @@ class FlowFieldVisualizer:
         )
         arrow_scale = unit_px * 0.35 * self.preferences["arrow_size_mult"]
 
-        arrow_colormap = colormaps[self.preferences["colormap"]]
+        vector_colors = self.preferences["vector_colors"]
+        arrow_colormap = colormaps[vector_colors] if vector_colors != "black" else None
 
         cache = self._flow_cache
         grid = cache["grid"]
@@ -614,18 +703,29 @@ class FlowFieldVisualizer:
 
                 length_frac = s / max_speed if max_speed > 0 else 0.0
                 length_frac = max(0.0, min(1.0, length_frac))
-                arrow_len = arrow_scale * (0.3 + 0.7 * length_frac)
-                rgba = arrow_colormap(length_frac)
-                arrow_color = tuple(round(channel * 255) for channel in rgba[:3])
+                if self.preferences["arrow_length_mode"] == "equal":
+                    arrow_len = arrow_scale if mag > 1e-9 else 0.0
+                else:
+                    arrow_len = arrow_scale * (0.3 + 0.7 * length_frac)
+                if arrow_colormap is None:
+                    arrow_color = (0, 0, 0)
+                else:
+                    rgba = arrow_colormap(length_frac)
+                    arrow_color = tuple(round(channel * 255) for channel in rgba[:3])
 
                 end_x = px + unit_dx * arrow_len
                 end_y = py - unit_dy * arrow_len
 
-                pygame.draw.line(self.screen, arrow_color, (px, py), (end_x, end_y), 2)
+                draw_aa_line(
+                    self.screen,
+                    (round(px), round(py)),
+                    (round(end_x), round(end_y)),
+                    arrow_color,
+                )
 
-                if length_frac > 0.05:
+                if mag > 1e-9:
                     angle = math.atan2(-unit_dy, unit_dx)
-                    head_len = 8
+                    head_len = min(8.0, max(3.0, arrow_len * 0.55))
                     p1 = (
                         end_x - head_len * math.cos(angle - math.pi / 6),
                         end_y - head_len * math.sin(angle - math.pi / 6),
@@ -634,11 +734,206 @@ class FlowFieldVisualizer:
                         end_x - head_len * math.cos(angle + math.pi / 6),
                         end_y - head_len * math.sin(angle + math.pi / 6),
                     )
-                    pygame.draw.polygon(
-                        self.screen, arrow_color, [p1, (end_x, end_y), p2]
-                    )
+                    head = [
+                        (round(p1[0]), round(p1[1])),
+                        (round(end_x), round(end_y)),
+                        (round(p2[0]), round(p2[1])),
+                    ]
+                    gfxdraw.filled_polygon(self.screen, head, arrow_color)
+                    gfxdraw.aapolygon(self.screen, head, arrow_color)
 
+        self._draw_state_trajectory(states_nxd)
+        self._draw_state_marker(states_nxd)
         self.screen.set_clip(prev_clip)
+
+    def _draw_state_trajectory(self, states_nxd):
+        """Connect prior states when the input is a time-ordered trajectory."""
+        if self.preferences["state_trajectory"] != "on":
+            return
+        if states_nxd is None or self.current_element_idx < 1:
+            return
+
+        finder = self.current_field()
+        states = states_nxd[: self.current_element_idx + 1]
+        reduced_states = finder._reduce_traj(states)
+        points = [
+            self.data_to_px(float(state[0]), float(state[1]))
+            for state in reduced_states
+        ]
+        if len(points) < 2:
+            return
+
+        colors = {
+            "black": (0, 0, 0),
+            "red": (190, 40, 40),
+            "blue": (40, 80, 190),
+            "green": (40, 140, 70),
+            "white": (255, 255, 255),
+        }
+        trajectory_color = colors[self.preferences["trajectory_color"]]
+        for start, end in zip(points, points[1:]):
+            draw_aa_line(
+                self.screen,
+                (round(start[0]), round(start[1])),
+                (round(end[0]), round(end[1])),
+                trajectory_color,
+            )
+
+    def _draw_state_marker(self, states_nxd):
+        """Draw the state used for the current flow field over the plot."""
+        if states_nxd is None or len(states_nxd) == 0:
+            return
+
+        state = states_nxd[self.current_element_idx]
+        finder = self.current_field()
+        reduced_state = finder._reduce_traj(state.unsqueeze(0))[0]
+        px, py = self.data_to_px(float(reduced_state[0]), float(reduced_state[1]))
+        marker = self.preferences["state_marker"]
+        marker_scale = self.preferences["state_marker_size"]
+        color = (20, 20, 20)
+        highlight = (255, 255, 255)
+
+        if not self.grid_area.inflate(16, 16).collidepoint(px, py):
+            return
+
+        if marker == "dot":
+            pygame.draw.circle(
+                self.screen, highlight, (round(px), round(py)), round(8 * marker_scale)
+            )
+            pygame.draw.circle(
+                self.screen, color, (round(px), round(py)), round(5 * marker_scale)
+            )
+        elif marker == "x":
+            pygame.draw.line(
+                self.screen,
+                highlight,
+                (px - 8 * marker_scale, py - 8 * marker_scale),
+                (px + 8 * marker_scale, py + 8 * marker_scale),
+                max(1, round(4 * marker_scale)),
+            )
+            pygame.draw.line(
+                self.screen,
+                highlight,
+                (px - 8 * marker_scale, py + 8 * marker_scale),
+                (px + 8 * marker_scale, py - 8 * marker_scale),
+                max(1, round(4 * marker_scale)),
+            )
+            pygame.draw.line(
+                self.screen,
+                color,
+                (px - 7 * marker_scale, py - 7 * marker_scale),
+                (px + 7 * marker_scale, py + 7 * marker_scale),
+                max(1, round(2 * marker_scale)),
+            )
+            pygame.draw.line(
+                self.screen,
+                color,
+                (px - 7 * marker_scale, py + 7 * marker_scale),
+                (px + 7 * marker_scale, py - 7 * marker_scale),
+                max(1, round(2 * marker_scale)),
+            )
+        else:
+            points = []
+            for i in range(10):
+                angle = -math.pi / 2 + i * math.pi / 5
+                radius = marker_scale * (10 if i % 2 == 0 else 4)
+                points.append(
+                    (px + radius * math.cos(angle), py + radius * math.sin(angle))
+                )
+            star_points = [(round(x), round(y)) for x, y in points]
+            gfxdraw.filled_polygon(self.screen, star_points, highlight)
+            gfxdraw.aapolygon(self.screen, star_points, highlight)
+            inner_points = []
+            for i in range(10):
+                angle = -math.pi / 2 + i * math.pi / 5
+                radius = marker_scale * (8 if i % 2 == 0 else 3)
+                inner_points.append(
+                    (px + radius * math.cos(angle), py + radius * math.sin(angle))
+                )
+            star_inner = [(round(x), round(y)) for x, y in inner_points]
+            gfxdraw.filled_polygon(self.screen, star_inner, color)
+            gfxdraw.aapolygon(self.screen, star_inner, color)
+
+    def _draw_energy_landscape(self, cache, draw_heatmap=True, draw_contours=True):
+        """Draw optional speed heatmap and equal-speed contours."""
+        grid, speed = cache["grid"], cache["speed"]
+        cmap = colormaps[self.preferences["colormap"]]
+        # Match flow-field arrow coloring: zero maps to the bottom of the
+        # colormap and the fastest visible vector maps to the top.
+        max_speed = float(np.max(speed))
+        rows, cols = speed.shape
+        if draw_heatmap:
+            for i in range(rows - 1):
+                for j in range(cols - 1):
+                    value = float(np.mean(speed[i : i + 2, j : j + 2]))
+                    norm = value / max_speed if max_speed > 1e-12 else 0.0
+                    norm = max(0.0, min(1.0, norm))
+                    color = tuple(round(c * 255) for c in cmap(norm)[:3])
+                    x0, y0 = self.data_to_px(grid[i, j, 0], grid[i, j, 1])
+                    x1, y1 = self.data_to_px(
+                        grid[i + 1, j + 1, 0], grid[i + 1, j + 1, 1]
+                    )
+                    rect = pygame.Rect(
+                        round(min(x0, x1)),
+                        round(min(y0, y1)),
+                        # Slight overlap prevents rounded cell boundaries from
+                        # exposing the background grid between heatmap cells.
+                        max(1, round(abs(x1 - x0)) + 2),
+                        max(1, round(abs(y1 - y0)) + 2),
+                    )
+                    pygame.draw.rect(self.screen, color, rect)
+
+        if draw_contours and max_speed > 1e-12:
+            import matplotlib.pyplot as plt
+
+            contour = plt.contour(
+                grid[:, :, 0],
+                grid[:, :, 1],
+                speed,
+                levels=np.linspace(0.0, max_speed, 8),
+            )
+            # Newer Matplotlib versions expose all contour paths directly
+            # on QuadContourSet rather than through ``collections``. A single
+            # path can contain several disconnected subpaths, so split on
+            # MOVETO/CLOSEPOLY to avoid drawing spurious straight connectors.
+            from matplotlib.path import Path as MatplotlibPath
+
+            for path in contour.get_paths():
+                points = []
+                for vertex, code in path.iter_segments():
+                    if code == MatplotlibPath.MOVETO:
+                        if len(points) > 1:
+                            for start, end in zip(points, points[1:]):
+                                draw_aa_line(
+                                    self.screen,
+                                    (round(start[0]), round(start[1])),
+                                    (round(end[0]), round(end[1])),
+                                    (35, 35, 35),
+                                )
+                        points = [self.data_to_px(float(vertex[0]), float(vertex[1]))]
+                    elif code == MatplotlibPath.CLOSEPOLY:
+                        if len(points) > 1:
+                            for start, end in zip(points, points[1:]):
+                                draw_aa_line(
+                                    self.screen,
+                                    (round(start[0]), round(start[1])),
+                                    (round(end[0]), round(end[1])),
+                                    (35, 35, 35),
+                                )
+                        points = []
+                    else:
+                        points.append(
+                            self.data_to_px(float(vertex[0]), float(vertex[1]))
+                        )
+                if len(points) > 1:
+                    for start, end in zip(points, points[1:]):
+                        draw_aa_line(
+                            self.screen,
+                            (round(start[0]), round(start[1])),
+                            (round(end[0]), round(end[1])),
+                            (35, 35, 35),
+                        )
+            plt.close(contour.figure)
 
     def _snap_to_grid(self, value):
         """Round a coordinate to the nearest major-grid line."""
@@ -647,7 +942,7 @@ class FlowFieldVisualizer:
 
     def draw_axes(self):
         """Draw border axes, tick marks, and numeric labels."""
-        font = pygame.font.Font(None, 24)
+        font = pygame.font.SysFont("Arial", 15)
         x_axis_y = self.grid_area.bottom
         y_axis_x = self.grid_area.left
 
@@ -694,60 +989,59 @@ class FlowFieldVisualizer:
 
     def draw_bounds_text(self):
         """Show the visible coordinate bounds in the top bar."""
-        label_font = pygame.font.Font(None, 24)
+        label_font = pygame.font.SysFont("Arial", 15)
         bounds_text = (
             f"x: ( {fmt_num(self.x_bounds[0])} , {fmt_num(self.x_bounds[1])} )      \
         y: ( {fmt_num(self.y_bounds[0])} , {fmt_num(self.y_bounds[1])} )"
         )
         surface = label_font.render(bounds_text, True, DARK_GRAY)
-        x = WINDOW_WIDTH - surface.get_width() - 20
+        x = self.screen.get_width() - surface.get_width() - 20
         y = (TOP_BAR_HEIGHT - surface.get_height()) // 2
         self.screen.blit(surface, (x, y))
 
     def draw_top_bar(self):
         """Draw the top bar and its menus over the plot."""
-        top_bar_rect = pygame.Rect(0, 0, WINDOW_WIDTH, TOP_BAR_HEIGHT)
+        top_bar_rect = pygame.Rect(0, 0, self.screen.get_width(), TOP_BAR_HEIGHT)
         pygame.draw.rect(self.screen, WHITE, top_bar_rect)
         pygame.draw.line(
             self.screen,
             (218, 218, 223),
             (0, top_bar_rect.bottom),
-            (WINDOW_WIDTH, top_bar_rect.bottom),
+            (self.screen.get_width(), top_bar_rect.bottom),
             1,
         )
 
-        self.file_btn.is_active = self.file_dropdown.visible
         self.pref_btn.is_active = self.preferences_panel.visible
-        self.file_btn.draw(self.screen)
         self.pref_btn.draw(self.screen)
 
         self.draw_bounds_text()
 
-        self.file_dropdown.draw(self.screen)
         self.preferences_panel.draw(self.screen)
 
     def draw_toolbar(self):
         """Draw bottom controls and the page or sample indicator."""
         toolbar_rect = pygame.Rect(
-            0, WINDOW_HEIGHT - TOOLBAR_HEIGHT, WINDOW_WIDTH, TOOLBAR_HEIGHT
+            0,
+            self.screen.get_height() - TOOLBAR_HEIGHT,
+            self.screen.get_width(),
+            TOOLBAR_HEIGHT,
         )
         pygame.draw.rect(self.screen, WHITE, toolbar_rect)
         pygame.draw.line(
             self.screen,
             (218, 218, 223),
             (0, toolbar_rect.top),
-            (WINDOW_WIDTH, toolbar_rect.top),
+            (self.screen.get_width(), toolbar_rect.top),
             1,
         )
 
-        self.reset_btn.draw(self.screen)
         self.mode_btn.draw(self.screen)
         self.left_arrow_btn.draw(self.screen)
         self.right_arrow_btn.draw(self.screen)
 
         page_font = pygame.font.SysFont("Arial", 14)
         page_text = page_font.render(
-            f"{self.current_element_idx + 1}/{len(self.states_nxd)}",
+            f"{self.current_element_idx + 1}/{self.n_pages}",
             True,
             BLACK,
         )
@@ -755,13 +1049,19 @@ class FlowFieldVisualizer:
             page_text, page_text.get_rect(center=self.page_label_rect.center)
         )
 
-    def run(self):
+    def run(self, inputs, states):
         """Run the 60-FPS event/update/draw loop until the window closes."""
+        inp_nxd, states_nxd = (
+            FlowFieldFinderBase._nxd(inputs),
+            FlowFieldFinderBase._nxd(states),
+        )
+        self.n_pages = inp_nxd.shape[0]
+        assert inp_nxd.shape[0] == states_nxd.shape[0]
         while self.running:
             self.handle_events()
             self.screen.fill(CANVAS_BG)
 
-            self.draw_grid()
+            self.draw_grid(inp_nxd, states_nxd)
             self.draw_axes()
             self.draw_top_bar()
             self.draw_toolbar()
