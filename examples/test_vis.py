@@ -70,4 +70,4 @@ if __name__ == "__main__":
         x_center=1.5,
         y_center=0,
     )
-    visualizer.run(inputs, h_traj)
+    visualizer.visualize(inputs, h_traj)
