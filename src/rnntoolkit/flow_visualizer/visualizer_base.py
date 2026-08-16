@@ -153,7 +153,6 @@ class FlowFieldVisualizerBase:
         self,
         rnn,
         num_points: int = 10,
-        delta_inputs: torch.Tensor | None = None,
         x_offset: int = 5,
         y_offset: int = 5,
         x_center: float = 0.0,
@@ -207,7 +206,6 @@ class FlowFieldVisualizerBase:
         # Model data consumed by FlowFieldFinder.
         self.rnn = rnn
         self.fit_states = fit_states
-        self.delta_inputs = delta_inputs
         self.axes = axes
         self.current_element_idx = 0
 
@@ -686,13 +684,12 @@ class FlowFieldVisualizerBase:
             "white": (255, 255, 255),
         }
         trajectory_color = colors[self.preferences["trajectory_color"]]
+        thickness = self.preferences["trajectory_thickness"]
         for start, end in zip(points, points[1:]):
-            draw_aa_line(
-                self.screen,
-                (round(start[0]), round(start[1])),
-                (round(end[0]), round(end[1])),
-                trajectory_color,
-            )
+            start_px = (round(start[0]), round(start[1]))
+            end_px = (round(end[0]), round(end[1]))
+            pygame.draw.line(self.screen, trajectory_color, start_px, end_px, thickness)
+            draw_aa_line(self.screen, start_px, end_px, trajectory_color)
 
     def _draw_state_marker(self, states_nxd):
         """Draw the state used for the current flow field over the plot."""
@@ -974,7 +971,10 @@ class FlowFieldVisualizerBase:
         their inputs into the two page-aligned arrays consumed by the common
         drawing and interaction code.
         """
-        inp_nxd, states_nxd = self.prepare_data(*args, **kwargs)
+        prepared_data = self.prepare_data(*args, **kwargs)
+        if not isinstance(prepared_data, tuple) or len(prepared_data) < 2:
+            raise ValueError("prepare_data must return at least inputs and states")
+        inp_nxd, states_nxd = prepared_data[:2]
         self.n_pages = inp_nxd.shape[0]
         if states_nxd.shape[0] != self.n_pages:
             raise ValueError("inputs and states must contain the same number of pages")
@@ -984,7 +984,7 @@ class FlowFieldVisualizerBase:
         while self.running:
             self.handle_events()
             if self._flow_dirty or self._flow_cache is None:
-                self.compute_flow_field(inp_nxd, states_nxd)
+                self.compute_flow_field(*prepared_data)
             self.screen.fill(CANVAS_BG)
             self.draw_grid()
             self.draw_axes()

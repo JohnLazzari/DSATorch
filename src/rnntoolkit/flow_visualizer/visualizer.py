@@ -21,7 +21,6 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
         self,
         rnn,
         num_points: int = 10,
-        delta_inputs: torch.Tensor | None = None,
         x_offset: int = 5,
         y_offset: int = 5,
         x_center: float = 0.0,
@@ -33,7 +32,6 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
         super().__init__(
             rnn,
             num_points,
-            delta_inputs,
             x_offset,
             y_offset,
             x_center,
@@ -56,23 +54,28 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
             axes=self.axes,
             follow_traj=False,
         )
-        if self.delta_inputs is not None:
-            self.delta_inputs_nxd = finder._nxd(self.delta_inputs)
-        else:
-            self.delta_inputs_nxd = None
         return finder
 
-    def prepare_data(self, inputs, states):
+    def prepare_data(self, inputs, states, delta_inputs=None):
         """Flatten RNNToolkit inputs and states into page-aligned samples."""
-        return FlowFieldFinderBase._nxd(inputs), FlowFieldFinderBase._nxd(states)
+        if delta_inputs is not None:
+            delta_inp_nxd = FlowFieldFinderBase._nxd(delta_inputs)
+        else:
+            delta_inp_nxd = None
+        return (
+            FlowFieldFinderBase._nxd(inputs),
+            FlowFieldFinderBase._nxd(states),
+            delta_inp_nxd,
+        )
 
-    def compute_flow_field(self, inp_nxd, states_nxd) -> FlowField:
+    def compute_flow_field(self, inp_nxd, states_nxd, delta_inp_nxd=None) -> FlowField:
         """Compute one page through the finder's public flow methods."""
         state_n = states_nxd[self.current_element_idx]
         inp_n = inp_nxd[self.current_element_idx]
-        delta_inp_n = None
-        if self.delta_inputs_nxd is not None:
-            delta_inp_n = self.delta_inputs_nxd[self.current_element_idx]
+        if delta_inp_nxd is not None:
+            delta_inp_n = delta_inp_nxd[self.current_element_idx]
+        else:
+            delta_inp_n = None
 
         finder = self.current_field()
         finder.num_points = self.preferences["grid_points"]
