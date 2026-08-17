@@ -59,6 +59,7 @@ PREFERENCE = {
     "show_contours": {"choices": ("off", "on"), "fmt": str},
     "show_vectors": {"choices": ("on", "off"), "fmt": str},
     "state_trajectory": {"choices": ("off", "on"), "fmt": str},
+    "cancel_other_regions": {"choices": ("off", "on"), "fmt": str},
     "trajectory_color": {
         "choices": ("black", "red", "blue", "green", "white"),
         "fmt": str,
@@ -95,6 +96,7 @@ PREF_LABELS = [
     ("show_contours", "Energy Contours"),
     ("show_vectors", "Show Vectors"),
     ("state_trajectory", "State Trajectory"),
+    ("cancel_other_regions", "Cancel Other Regions"),
     ("trajectory_color", "Trajectory Color"),
     ("trajectory_thickness", "Trajectory Thickness"),
     ("state_marker", "State Marker"),
@@ -160,7 +162,13 @@ class PreferencesPanel:
 
     def _is_toggle(self, key):
         """Return whether a choice is a simple two-state on/off setting."""
-        return key in {"show_heatmap", "show_contours", "show_vectors", "state_trajectory"}
+        return key in {
+            "show_heatmap",
+            "show_contours",
+            "show_vectors",
+            "state_trajectory",
+            "cancel_other_regions",
+        }
 
     def _value_rect(self, i):
         row = self._row_rect(i)

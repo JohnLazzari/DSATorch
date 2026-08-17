@@ -226,8 +226,6 @@ class FlowFieldVisualizerBase:
 
         self._create_ui()
         self.running = True
-        self._active_inputs = None
-        self._active_states = None
 
         # State retained while the user pans with a left-mouse drag.
         self.dragging = False
@@ -493,7 +491,7 @@ class FlowFieldVisualizerBase:
 
         self._update_bounds()
 
-    def draw_grid(self):
+    def draw_grid(self, inputs, states):
         """Draw grid lines, flow arrows, and arrowheads."""
         pygame.draw.rect(self.screen, WHITE, self.grid_area)
 
@@ -566,8 +564,8 @@ class FlowFieldVisualizerBase:
             )
 
         if self.preferences["show_vectors"] != "on":
-            self._draw_state_trajectory(self._active_states)
-            self._draw_state_marker(self._active_states)
+            self._draw_state_trajectory(states)
+            self._draw_state_marker(states)
             self.screen.set_clip(prev_clip)
             return
 
@@ -655,8 +653,8 @@ class FlowFieldVisualizerBase:
                     gfxdraw.filled_polygon(self.screen, head, arrow_color)
                     gfxdraw.aapolygon(self.screen, head, arrow_color)
 
-        self._draw_state_trajectory(self._active_states)
-        self._draw_state_marker(self._active_states)
+        self._draw_state_trajectory(states)
+        self._draw_state_marker(states)
         self.screen.set_clip(prev_clip)
 
     def _draw_state_trajectory(self, states_nxd):
@@ -979,14 +977,12 @@ class FlowFieldVisualizerBase:
         if states_nxd.shape[0] != self.n_pages:
             raise ValueError("inputs and states must contain the same number of pages")
 
-        self._active_inputs = inp_nxd
-        self._active_states = states_nxd
         while self.running:
             self.handle_events()
             if self._flow_dirty or self._flow_cache is None:
                 self.compute_flow_field(*prepared_data)
             self.screen.fill(CANVAS_BG)
-            self.draw_grid()
+            self.draw_grid(inp_nxd, states_nxd)
             self.draw_axes()
             self.draw_top_bar()
             self.draw_toolbar()
@@ -994,4 +990,4 @@ class FlowFieldVisualizerBase:
             self.clock.tick(60)
 
         pygame.quit()
-        sys.exit()
+        return
