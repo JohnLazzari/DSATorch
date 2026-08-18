@@ -1,4 +1,7 @@
+from collections.abc import Sequence
+
 import pygame
+from rnntoolkit.flow_visualizer.button import Button
 
 pygame.init()
 
@@ -16,8 +19,8 @@ class DropdownMenu:
     Clicking an item returns its label; clicking outside closes the menu.
     """
 
-    def __init__(self, file_button, items):
-        # The anchor button determines where the menu is positioned.
+    def __init__(self, file_button: Button, items: Sequence[str]) -> None:
+        """Initialize a menu anchored to ``file_button`` with item labels."""
         self.file = file_button
         self.items = items
         self.visible = False
@@ -25,9 +28,10 @@ class DropdownMenu:
         self.width = 180
         self.item_height = 29
         self.padding = 5
-        self.hovered_index = None
+        self.hovered_index: int | None = None
 
-    def _menu_rect(self):
+    def _menu_rect(self) -> pygame.Rect:
+        """Return the rectangle enclosing the full dropdown."""
         return pygame.Rect(
             self.file.rect.left,
             self.file.rect.bottom + 4,
@@ -35,7 +39,8 @@ class DropdownMenu:
             len(self.items) * self.item_height + self.padding * 2,
         )
 
-    def _item_rect(self, index):
+    def _item_rect(self, index: int) -> pygame.Rect:
+        """Return the rectangle for item ``index``."""
         menu_rect = self._menu_rect()
         return pygame.Rect(
             menu_rect.left + self.padding,
@@ -44,16 +49,16 @@ class DropdownMenu:
             self.item_height,
         )
 
-    def show(self):
+    def show(self) -> None:
         """Open the menu."""
         self.visible = True
 
-    def hide(self):
+    def hide(self) -> None:
         """Close the menu."""
         self.visible = False
 
-    def handle_event(self, event):
-        """Return the selected item's label, or None if none was selected."""
+    def handle_event(self, event: pygame.event.Event) -> str | None:
+        """Return the selected item label, or None if none was selected."""
         if not self.visible:
             return None
 
@@ -73,7 +78,7 @@ class DropdownMenu:
                 self.hide()
         return None
 
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface) -> None:
         """Draw the menu background and item labels when it is visible."""
         if not self.visible:
             return

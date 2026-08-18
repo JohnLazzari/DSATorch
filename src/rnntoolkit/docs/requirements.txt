@@ -1,7 +1,8 @@
 sphinx>=7
-shibuya
+sphinx-rtd-theme
 numpy
 torch
 scikit-learn
 scipy
 matplotlib
+pygame

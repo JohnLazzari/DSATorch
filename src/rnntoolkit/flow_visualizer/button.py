@@ -1,5 +1,7 @@
 import pygame
 
+Color = tuple[int, int, int]
+
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 LIGHT_GRAY = (220, 220, 220)
@@ -17,8 +19,16 @@ class Button:
     the application to react to the click.
     """
 
-    def __init__(self, x, y, width, height, text, style="default"):
-        # The rectangle is shared by collision detection and drawing.
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        text: str,
+        style: str = "default",
+    ) -> None:
+        """Initialize the button rectangle, label, style, and font."""
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
         self.style = style
@@ -31,7 +41,7 @@ class Button:
             else pygame.font.Font(None, 18)
         )
 
-    def handle_event(self, event):
+    def handle_event(self, event: pygame.event.Event) -> bool:
         """Update mouse state and report whether a new click began."""
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
@@ -42,7 +52,7 @@ class Button:
             self.is_pressed = False
         return False
 
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface) -> None:
         """Draw the button using a color that reflects its current state."""
         if self.style == "menu":
             if self.is_pressed or self.is_active:

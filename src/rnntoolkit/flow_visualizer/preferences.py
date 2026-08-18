@@ -1,4 +1,7 @@
+from typing import Any
+
 import pygame
+from rnntoolkit.flow_visualizer.button import Button
 
 pygame.init()
 
@@ -114,9 +117,8 @@ class PreferencesPanel:
     Every row has minus and plus buttons. The visualizer's ``adjust_pref``
     method owns value changes and range checking; this class handles the UI.
     """
-
-    def __init__(self, options_button, app):
-        # The options button is the anchor, while ``app`` owns the values.
+    def __init__(self, options_button: Button, app: Any) -> None:
+        """Initialize the panel anchored to ``options_button`` for ``app``."""
         self.file = options_button
         self.app = app
         self.visible = False
@@ -127,15 +129,15 @@ class PreferencesPanel:
         self.row_height = 36
         self.padding = 5
 
-    def show(self):
+    def show(self) -> None:
         """Open the preferences panel."""
         self.visible = True
 
-    def hide(self):
+    def hide(self) -> None:
         """Close the preferences panel."""
         self.visible = False
 
-    def _row_rect(self, i):
+    def _row_rect(self, i: int) -> pygame.Rect:
         """Return the rectangle occupied by preference row ``i``."""
         start_y = self.file.rect.bottom + 4 + self.padding
         return pygame.Rect(
@@ -145,7 +147,8 @@ class PreferencesPanel:
             self.row_height,
         )
 
-    def _menu_rect(self):
+    def _menu_rect(self) -> pygame.Rect:
+        """Return the rectangle enclosing the full preferences panel."""
         return pygame.Rect(
             self.file.rect.left,
             self.file.rect.bottom + 4,
@@ -153,14 +156,14 @@ class PreferencesPanel:
             self.row_height * len(PREF_LABELS) + self.padding * 2,
         )
 
-    def _stepper_rects(self, i):
+    def _stepper_rects(self, i: int) -> tuple[pygame.Rect, pygame.Rect]:
         """Return the minus and plus button rectangles for row ``i``."""
         row = self._row_rect(i)
         minus_rect = pygame.Rect(row.right - 92, row.top + 4, 26, 26)
         plus_rect = pygame.Rect(row.right - 34, row.top + 4, 26, 26)
         return minus_rect, plus_rect
 
-    def _is_toggle(self, key):
+    def _is_toggle(self, key: str) -> bool:
         """Return whether a choice is a simple two-state on/off setting."""
         return key in {
             "show_heatmap",
@@ -170,12 +173,18 @@ class PreferencesPanel:
             "cancel_other_regions",
         }
 
-    def _value_rect(self, i):
+    def _value_rect(self, i: int) -> pygame.Rect:
+        """Return the clickable value area for a toggle preference row."""
         row = self._row_rect(i)
         minus_rect, plus_rect = self._stepper_rects(i)
-        return pygame.Rect(minus_rect.left, row.top + 4, plus_rect.right - minus_rect.left, 26)
+        return pygame.Rect(
+            minus_rect.left,
+            row.top + 4,
+            plus_rect.right - minus_rect.left,
+            26,
+        )
 
-    def handle_event(self, event):
+    def handle_event(self, event: pygame.event.Event) -> None:
         """Apply stepper clicks and close the panel on an outside click."""
         if not self.visible:
             return
@@ -195,7 +204,7 @@ class PreferencesPanel:
             if not self._menu_rect().collidepoint(event.pos):
                 self.hide()
 
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface) -> None:
         """Draw labels, current values, and stepper buttons."""
         if not self.visible:
             return

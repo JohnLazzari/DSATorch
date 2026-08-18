@@ -1,35 +1,11 @@
-rnntoolkit
-=================
-
-fixed\_points
------------
+RNNToolkit API
+==============
 
 .. toctree::
-  :maxdepth: 1
+   :maxdepth: 1
 
-  rnntoolkit.fixed_points
-
-flow\_fields
------------
-
-.. toctree::
-  :maxdepth: 1
-
-  rnntoolkit.flow_fields
-
-linear
------------
-
-.. toctree::
-  :maxdepth: 1
-
-  rnntoolkit.linear
-
-utils
--------------------------------
-
-.. toctree::
-  :maxdepth: 1
-
-  rnntoolkit.utils
-
+   rnntoolkit.fixed_points
+   rnntoolkit.linear
+   rnntoolkit.flow_fields
+   rnntoolkit.flow_visualizer
+   rnntoolkit.utils

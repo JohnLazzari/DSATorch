@@ -1,3 +1,5 @@
+from typing import Any
+
 import pygame
 import torch
 from rnntoolkit.flow_fields.flow_field import FlowField
@@ -19,7 +21,7 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
 
     def __init__(
         self,
-        rnn,
+        rnn: Any,
         num_points: int = 10,
         x_offset: int = 5,
         y_offset: int = 5,
@@ -28,7 +30,8 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
         fit_states: torch.Tensor | None = None,
         axes: torch.Tensor | None = None,
         flow_type: str = "nonlinear",
-    ):
+    ) -> None:
+        """Initialize the concrete RNNToolkit flow-field visualizer."""
         super().__init__(
             rnn,
             num_points,
@@ -41,7 +44,7 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
             flow_type,
         )
 
-    def build_finder(self):
+    def build_finder(self) -> FlowFieldFinder:
         """Build the RNNToolkit finder for this visualizer."""
         finder = FlowFieldFinder(
             rnn=self.rnn,
@@ -56,7 +59,12 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
         )
         return finder
 
-    def prepare_data(self, inputs, states, delta_inputs=None):
+    def prepare_data(
+        self,
+        inputs: torch.Tensor,
+        states: torch.Tensor,
+        delta_inputs: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Flatten RNNToolkit inputs and states into page-aligned samples."""
         if delta_inputs is not None:
             delta_inp_nxd = FlowFieldFinderBase._nxd(delta_inputs)
@@ -68,7 +76,12 @@ class FlowFieldVisualizer(FlowFieldVisualizerBase):
             delta_inp_nxd,
         )
 
-    def compute_flow_field(self, inp_nxd, states_nxd, delta_inp_nxd=None) -> FlowField:
+    def compute_flow_field(
+        self,
+        inp_nxd: torch.Tensor,
+        states_nxd: torch.Tensor,
+        delta_inp_nxd: torch.Tensor | None = None,
+    ) -> FlowField:
         """Compute one page through the finder's public flow methods."""
         state_n = states_nxd[self.current_element_idx]
         inp_n = inp_nxd[self.current_element_idx]

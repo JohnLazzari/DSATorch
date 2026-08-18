@@ -1,13 +1,18 @@
+from typing import Any
+
 import pygame
 import pygame.gfxdraw as gfxdraw
 import numpy as np
 import math
-import sys
 import torch
 from matplotlib import colormaps
 from rnntoolkit.flow_visualizer.button import Button
 from rnntoolkit.flow_visualizer.preferences import PreferencesPanel
 from rnntoolkit.flow_fields.flow_field import FlowField
+
+Point = tuple[float, float] | tuple[int, int]
+Color = tuple[int, int, int]
+FlowCache = dict[str, np.ndarray]
 
 pygame.init()
 
@@ -24,7 +29,12 @@ DARK_GRAY = (80, 80, 80)
 CANVAS_BG = (245, 245, 250)
 
 
-def draw_aa_line(surface, start, end, color):
+def draw_aa_line(
+    surface: pygame.Surface,
+    start: Point,
+    end: Point,
+    color: Color,
+) -> None:
     """Draw an anti-aliased line from two point tuples with gfxdraw."""
     gfxdraw.line(
         surface,
@@ -36,7 +46,8 @@ def draw_aa_line(surface, start, end, color):
     )
 
 
-def fmt_num(v):
+def fmt_num(v: float) -> str:
+    """Format a tick value compactly for axis and bound labels."""
     if abs(v) < 1e-9:
         return "0"
     if abs(v - round(v)) < 1e-9:
@@ -151,7 +162,7 @@ class FlowFieldVisualizerBase:
 
     def __init__(
         self,
-        rnn,
+        rnn: Any,
         num_points: int = 10,
         x_offset: int = 5,
         y_offset: int = 5,
@@ -160,7 +171,7 @@ class FlowFieldVisualizerBase:
         fit_states: torch.Tensor | None = None,
         axes: torch.Tensor | None = None,
         flow_type: str = "nonlinear",
-    ):
+    ) -> None:
         """Create the window, prepare the supplied data, and build the UI."""
         # Pygame window and frame-rate controller.
         self.screen = pygame.display.set_mode(
@@ -233,28 +244,29 @@ class FlowFieldVisualizerBase:
 
     # ----------- Must be overrided by user -----------------------
 
-    def build_finder(self, *args, **kwargs):
+    def build_finder(self, *args: Any, **kwargs: Any) -> Any:
         """Construct and return the finder used by this visualizer."""
         raise NotImplementedError
 
-    def prepare_data(self, *args, **kwargs):
+    def prepare_data(self, *args: Any, **kwargs: Any) -> tuple[Any, ...]:
         """Convert user inputs/states into page-aligned visualizer data."""
         raise NotImplementedError
 
-    def compute_flow_field(self, *args, **kwargs):
+    def compute_flow_field(self, *args: Any, **kwargs: Any) -> FlowField:
+        """Compute and cache the flow field for the current page."""
         raise NotImplementedError
 
-    def current_field(self):
+    def current_field(self) -> Any:
         """Return metadata for the currently visible field page."""
         return self.pages[self.current_page - 1]
 
-    def _mark_dirty(self):
+    def _mark_dirty(self) -> None:
         """Require the cached flow field to be recomputed before drawing."""
         self._flow_dirty = True
 
     # ----------- base class functionality -----------------------
 
-    def _calculate_grid_area(self):
+    def _calculate_grid_area(self) -> None:
         """Center the square plot in the space between the two toolbars."""
         window_width, window_height = self.screen.get_size()
         side_margin = 80
@@ -272,7 +284,7 @@ class FlowFieldVisualizerBase:
         top = top_bound + (available_height - size) // 2
         self.grid_area = pygame.Rect(left, top, size, size)
 
-    def _create_ui(self):
+    def _create_ui(self) -> None:
         """Create all buttons and popup controls."""
         self.pref_btn = Button(14, 5, 105, 25, "Options", style="menu")
         self.preferences_panel = PreferencesPanel(self.pref_btn, self)
@@ -296,7 +308,7 @@ class FlowFieldVisualizerBase:
             self.right_arrow_btn,
         ]
 
-    def _position_toolbar_controls(self):
+    def _position_toolbar_controls(self) -> None:
         """Keep toolbar controls fixed-size while moving them with the window."""
         _, window_height = self.screen.get_size()
         toolbar_y = window_height - TOOLBAR_HEIGHT
@@ -306,7 +318,7 @@ class FlowFieldVisualizerBase:
         self.page_label_rect.topleft = (right_x + 50, toolbar_y + 7)
         self.right_arrow_btn.rect.topleft = (right_x + 110, toolbar_y + 7)
 
-    def adjust_pref(self, key, direction):
+    def adjust_pref(self, key: str, direction: int) -> None:
         """Move a preference one step and clamp it to its allowed range."""
         spec = PREFERENCE[key]
         if "choices" in spec:
@@ -322,7 +334,7 @@ class FlowFieldVisualizerBase:
         if key == "grid_points":
             self._mark_dirty()
 
-    def get_grid_step(self):
+    def get_grid_step(self) -> float:
         """Choose a readable major-grid interval for the current zoom."""
         target_divisions = max(1, int(self.num_points - 1))
         rough_step = self.view_span / target_divisions
@@ -342,7 +354,7 @@ class FlowFieldVisualizerBase:
         else:
             return 10.0 * mag
 
-    def _update_bounds(self):
+    def _update_bounds(self) -> None:
         """Derive visible x/y bounds from the center and square span."""
         self.x_bounds = (
             self.x_center - self.view_span / 2,
@@ -353,7 +365,7 @@ class FlowFieldVisualizerBase:
             self.y_center + self.view_span / 2,
         )
 
-    def data_to_px(self, x_val, y_val):
+    def data_to_px(self, x_val: float, y_val: float) -> tuple[float, float]:
         """Convert data coordinates to Pygame pixel coordinates."""
         x_range = self.x_bounds[1] - self.x_bounds[0]
         y_range = self.y_bounds[1] - self.y_bounds[0]
@@ -368,7 +380,7 @@ class FlowFieldVisualizerBase:
         )
         return px, py
 
-    def px_to_data(self, px, py):
+    def px_to_data(self, px: float, py: float) -> tuple[float, float]:
         """Convert Pygame pixel coordinates back to data coordinates."""
         fx = (px - self.grid_area.left) / self.grid_area.width
         fy = (py - self.grid_area.top) / self.grid_area.height
@@ -376,7 +388,7 @@ class FlowFieldVisualizerBase:
         y_val = self.y_bounds[1] - fy * (self.y_bounds[1] - self.y_bounds[0])
         return x_val, y_val
 
-    def zoom(self, amount, mouse_pos):
+    def zoom(self, amount: int, mouse_pos: tuple[int, int]) -> None:
         """Zoom while keeping the point beneath the cursor stationary."""
         if amount == 0:
             return
@@ -404,7 +416,7 @@ class FlowFieldVisualizerBase:
         self.y_center = my - new_span / 2 + fy * new_span
         self._mark_dirty()
 
-    def handle_events(self):
+    def handle_events(self) -> None:
         """Process one frame of window, control, zoom, and pan events."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -491,7 +503,7 @@ class FlowFieldVisualizerBase:
 
         self._update_bounds()
 
-    def draw_grid(self, inputs, states):
+    def draw_grid(self, inputs: torch.Tensor, states: torch.Tensor) -> None:
         """Draw grid lines, flow arrows, and arrowheads."""
         pygame.draw.rect(self.screen, WHITE, self.grid_area)
 
@@ -657,7 +669,7 @@ class FlowFieldVisualizerBase:
         self._draw_state_marker(states)
         self.screen.set_clip(prev_clip)
 
-    def _draw_state_trajectory(self, states_nxd):
+    def _draw_state_trajectory(self, states_nxd: torch.Tensor | None) -> None:
         """Connect prior states when the input is a time-ordered trajectory."""
         if self.preferences["state_trajectory"] != "on":
             return
@@ -689,7 +701,7 @@ class FlowFieldVisualizerBase:
             pygame.draw.line(self.screen, trajectory_color, start_px, end_px, thickness)
             draw_aa_line(self.screen, start_px, end_px, trajectory_color)
 
-    def _draw_state_marker(self, states_nxd):
+    def _draw_state_marker(self, states_nxd: torch.Tensor | None) -> None:
         """Draw the state used for the current flow field over the plot."""
         if states_nxd is None or len(states_nxd) == 0:
             return
@@ -764,7 +776,12 @@ class FlowFieldVisualizerBase:
             gfxdraw.filled_polygon(self.screen, star_inner, color)
             gfxdraw.aapolygon(self.screen, star_inner, color)
 
-    def _draw_energy_landscape(self, cache, draw_heatmap=True, draw_contours=True):
+    def _draw_energy_landscape(
+        self,
+        cache: FlowCache,
+        draw_heatmap: bool = True,
+        draw_contours: bool = True,
+    ) -> None:
         """Draw optional speed heatmap and equal-speed contours."""
         grid, speed = cache["grid"], cache["speed"]
         cmap = colormaps[self.preferences["colormap"]]
@@ -845,12 +862,12 @@ class FlowFieldVisualizerBase:
                         )
             plt.close(contour.figure)
 
-    def _snap_to_grid(self, value):
+    def _snap_to_grid(self, value: float) -> float:
         """Round a coordinate to the nearest major-grid line."""
         step = self.get_grid_step()
         return round(value / step) * step
 
-    def draw_axes(self):
+    def draw_axes(self) -> None:
         """Draw border axes, tick marks, and numeric labels."""
         font = pygame.font.SysFont("Arial", 15)
         x_axis_y = self.grid_area.bottom
@@ -897,7 +914,7 @@ class FlowFieldVisualizerBase:
                 label = font.render(fmt_num(gy), True, BLACK)
                 self.screen.blit(label, label.get_rect(center=(y_axis_x - 30, py)))
 
-    def draw_bounds_text(self):
+    def draw_bounds_text(self) -> None:
         """Show the visible coordinate bounds in the top bar."""
         label_font = pygame.font.SysFont("Arial", 15)
         bounds_text = (
@@ -909,7 +926,7 @@ class FlowFieldVisualizerBase:
         y = (TOP_BAR_HEIGHT - surface.get_height()) // 2
         self.screen.blit(surface, (x, y))
 
-    def draw_top_bar(self):
+    def draw_top_bar(self) -> None:
         """Draw the top bar and its menus over the plot."""
         top_bar_rect = pygame.Rect(0, 0, self.screen.get_width(), TOP_BAR_HEIGHT)
         pygame.draw.rect(self.screen, WHITE, top_bar_rect)
@@ -928,7 +945,7 @@ class FlowFieldVisualizerBase:
 
         self.preferences_panel.draw(self.screen)
 
-    def draw_toolbar(self):
+    def draw_toolbar(self) -> None:
         """Draw bottom controls and the page or sample indicator."""
         toolbar_rect = pygame.Rect(
             0,
@@ -961,7 +978,7 @@ class FlowFieldVisualizerBase:
 
     # ----------- may likely be overrided by user -----------------------
 
-    def visualize(self, *args, **kwargs):
+    def visualize(self, *args: Any, **kwargs: Any) -> None:
         """Prepare arbitrary data and run the shared visualization loop.
 
         Subclasses with a different lifecycle or rendering data contract may

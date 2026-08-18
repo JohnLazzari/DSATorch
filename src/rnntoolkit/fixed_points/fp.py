@@ -50,7 +50,7 @@ class FixedPointCollection:
         Initializes a FixedPoints object with all input arguments as class
         properties.
 
-        Optional args:
+        Args:
 
             xstar: [n x n_states] tensor with row xstar[i, :]
                 specifying an the fixed point identified from x_init[i, :].
@@ -356,16 +356,7 @@ class FixedPointCollection:
         file.close()
 
     def restore(self, restore_path: str):
-        """Restores data from a previously saved FixedPoints object.
-
-        Args:
-            restore_path: A string containing the path at which to find a
-            previously saved FixedPoints object (including directory, filename,
-            and extension).
-
-        Returns:
-            None.
-        """
+        """Restore collection data from ``restore_path``."""
         if self.verbose:
             print("Restoring FixedPoints object.")
         file = open(restore_path, "rb")
@@ -437,7 +428,7 @@ class FixedPointCollection:
         """Returns dict of keyword arguments necessary for reinstantiating a
         (shallow) copy of this FixedPoints object, i.e.,
 
-        fp_copy  = FixedPoints(**fp.kwargs)
+        ``fp_copy = FixedPointCollection(**fp.kwargs)``
         """
 
         kwargs = self._nonspecific_kwargs
